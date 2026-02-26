@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Mini Minecraft</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { overflow:hidden; background:#87ceeb; font-family:monospace; }
+  canvas { display:block; }
+
+  #hud {
+    position:absolute; inset:0; pointer-events:none;
+  }
+
+  /* Crosshair */
+  #crosshair {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:20px; height:20px;
+  }
+  #crosshair::before, #crosshair::after {
+    content:''; position:absolute; background:rgba(255,255,255,0.85);
+    border-radius:2px;
+    box-shadow:0 0 4px rgba(0,0,0,0.6);
+  }
+  #crosshair::before { width:2px; height:20px; left:9px; top:0; }
+  #crosshair::after  { width:20px; height:2px; top:9px; left:0; }
+
+  /* Controls hint */
+  #controls {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+    display:flex; gap:8px; align-items:flex-end;
+    opacity:0.9;
+  }
+  .key-col { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .key-row { display:flex; gap:4px; }
+  .key {
+    width:36px; height:36px; border-radius:6px;
+    background:rgba(30,30,30,0.75);
+    border:1px solid rgba(255,255,255,0.25);
+    backdrop-filter:blur(6px);
+    color:#fff; font-size:13px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 0 rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+    text-shadow:0 1px 2px #000;
+    transition:background 0.1s;
+  }
+  .key.wide { width:80px; }
+  .key.active { background:rgba(80,180,80,0.7); }
+  .key-label {
+    font-size:10px; color:rgba(255,255,255,0.6); letter-spacing:0.05em;
+    text-transform:uppercase; margin-top:2px;
+    text-shadow:0 1px 2px #000;
+  }
+
+  /* Click-to-play overlay */
+  #overlay {
+    position:absolute; inset:0;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; transition:opacity 0.3s;
+    pointer-events:all;
+  }
+  #overlay h1 {
+    font-size:clamp(28px,5vw,52px);
+    color:#fff; letter-spacing:4px; text-transform:uppercase;
+    text-shadow:0 0 30px rgba(100,220,100,0.7), 3px 3px 0 #2a5c0f;
+    margin-bottom:16px;
+  }
+  #overlay p {
+    color:rgba(255,255,255,0.75); font-size:16px;
+    letter-spacing:1px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+
+  /* Speed/pos info */
+  #info {
+    position:absolute; top:14px; left:14px;
+    color:rgba(255,255,255,0.85); font-size:12px; line-height:1.7;
+    text-shadow:1px 1px 3px #000;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="crosshair"></div>
+
+  <div id="controls">
+    <div class="key-col">
+      <div class="key-row"><div class="key" id="kw">W</div></div>
+      <div class="key-row">
+        <div class="key" id="ka">A</div>
+        <div class="key" id="ks">S</div>
+        <div class="key" id="kd">D</div>
+      </div>
+      <div class="key-label">Move</div>
+    </div>
+    <div class="key-col" style="margin-left:8px">
+      <div class="key wide" id="kspace">SPACE</div>
+      <div class="key-label">Jump</div>
+    </div>
+    <div class="key-col" style="margin-left:8px">
+      <div class="key" style="width:auto;padding:0 10px;font-size:11px;">🖱 Drag</div>
+      <div class="key-label">Look</div>
+    </div>
+  </div>
+
+  <div id="info">
+    X: <span id="px">0</span>&nbsp; Z: <span id="pz">0</span><br>
+    <span id="state">Idle</span>
+  </div>
+</div>
+
+<div id="overlay">
+  <h1>⛏ Mini Craft</h1>
+  <p>Click to Play</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─────────────────────────────────────────
+//  SCENE
+// ─────────────────────────────────────────
+const scene    = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog        = new THREE.Fog(0x87ceeb, 45, 90);
+
+const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 200);
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─────────────────────────────────────────
+//  LIGHTING
+// ─────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xb0d8ff, 0.7));
+
+const sun = new THREE.DirectionalLight(0xfff5cc, 1.4);
+sun.position.set(30, 60, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far  = 200;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -40;
+sun.shadow.camera.right = sun.shadow.camera.top   =  40;
+scene.add(sun);
+
+// ─────────────────────────────────────────
+//  GROUND
+// ─────────────────────────────────────────
+const groundMat = new THREE.MeshLambertMaterial({ color:0x4caf50 });
+const ground    = new THREE.Mesh(new THREE.PlaneGeometry(80,80), groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Subtle grid
+const grid = new THREE.GridHelper(80, 80, 0x33882233, 0x33882233);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// ─────────────────────────────────────────
+//  WORLD BLOCKS
+// ─────────────────────────────────────────
+const PALETTE = [
+  { color:0x795548, name:'dirt'  },
+  { color:0x4caf50, name:'grass' },
+  { color:0x9e9e9e, name:'stone' },
+  { color:0xf5d78e, name:'sand'  },
+  { color:0xa5c4d4, name:'ice'   },
+  { color:0x8d6e63, name:'wood'  },
+  { color:0xf0f0f0, name:'snow'  },
+  { color:0xe57373, name:'brick' },
+];
+
+const blockGeo  = new THREE.BoxGeometry(1,1,1);
+const worldBlocks = []; // for simple collision AABB list
+
+function placeBlock(x, y, z, colorHex) {
+  const mat  = new THREE.MeshLambertMaterial({ color: colorHex });
+  const mesh = new THREE.Mesh(blockGeo, mat);
+  mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+  worldBlocks.push({ x, y, z, mesh });
+  return mesh;
+}
+
+// Generate 25 stacks
+for (let i = 0; i < 25; i++) {
+  const bx = Math.floor(Math.random()*30) - 15;
+  const bz = Math.floor(Math.random()*30) - 15;
+  const h  = Math.floor(Math.random()*4) + 1;
+  for (let j = 0; j < h; j++) {
+    const p = PALETTE[Math.floor(Math.random()*PALETTE.length)];
+    placeBlock(bx, j, bz, p.color);
+  }
+}
+
+// A small "house" structure
+const WOOD = 0x8d6e63, LEAF = 0x388e3c, STONE = 0x9e9e9e;
+const hx = 8, hz = 8;
+for (let dx=0;dx<4;dx++) for (let dz=0;dz<4;dz++) placeBlock(hx+dx, 0, hz+dz, STONE);
+for (let dx=0;dx<4;dx++) { placeBlock(hx+dx,1,hz,WOOD); placeBlock(hx+dx,1,hz+3,WOOD); }
+for (let dz=1;dz<3;dz++) { placeBlock(hx,1,hz+dz,WOOD); placeBlock(hx+3,1,hz+dz,WOOD); }
+for (let dx=0;dx<4;dx++) for (let dz=0;dz<4;dz++) placeBlock(hx+dx,2,hz+dz,LEAF);
+
+// ─────────────────────────────────────────
+//  CHARACTER MODEL (Minecraft Steve style)
+// ─────────────────────────────────────────
+const charGroup = new THREE.Group();
+scene.add(charGroup);
+
+function makePart(w, h, d, color, ox, oy, oz) {
+  const geo  = new THREE.BoxGeometry(w, h, d);
+  const mat  = new THREE.MeshLambertMaterial({ color });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(ox, oy, oz);
+  mesh.castShadow = true;
+  return mesh;
+}
+
+// Colors
+const SKIN   = 0xf4c27a; // skin tone
+const HAIR   = 0x4a2f1a; // dark brown hair
+const SHIRT  = 0x1565c0; // blue shirt
+const PANT   = 0x37474f; // dark pants
+const BOOT   = 0x3e2723; // boots
+const EYE    = 0x1a237e; // deep blue eyes
+const MOUTH  = 0xc62828; // red mouth
+
+// HEAD group
+const headGroup = new THREE.Group();
+headGroup.position.y = 1.625 + 0.35; // pivot at neck
+charGroup.add(headGroup);
+
+const head    = makePart(0.6, 0.6, 0.6, SKIN,  0, 0, 0);
+const hairTop = makePart(0.62, 0.08, 0.62, HAIR, 0, 0.3, 0);
+const hairBk  = makePart(0.62, 0.45, 0.05, HAIR, 0, 0.05, -0.3);
+const eyeL    = makePart(0.12, 0.1, 0.02, EYE,  -0.15, 0.06, 0.31);
+const eyeR    = makePart(0.12, 0.1, 0.02, EYE,   0.15, 0.06, 0.31);
+const mouth   = makePart(0.18, 0.05, 0.02, MOUTH, 0, -0.1, 0.31);
+const nose    = makePart(0.08, 0.08, 0.06, 0xe0a070, 0, -0.02, 0.32);
+headGroup.add(head, hairTop, hairBk, eyeL, eyeR, mouth, nose);
+
+// TORSO
+const torso = makePart(0.56, 0.72, 0.28, SHIRT, 0, 1.25, 0);
+charGroup.add(torso);
+
+// ARMS (pivot at shoulder)
+const leftArmGroup  = new THREE.Group();
+leftArmGroup.position.set(-0.42, 1.61, 0);
+const rightArmGroup = new THREE.Group();
+rightArmGroup.position.set( 0.42, 1.61, 0);
+
+const lArm = makePart(0.28, 0.7, 0.28, SKIN,  0, -0.35, 0);
+const rArm = makePart(0.28, 0.7, 0.28, SKIN,  0, -0.35, 0);
+leftArmGroup.add(lArm);
+rightArmGroup.add(rArm);
+charGroup.add(leftArmGroup, rightArmGroup);
+
+// LEGS (pivot at hip)
+const leftLegGroup  = new THREE.Group();
+leftLegGroup.position.set(-0.14, 0.89, 0);
+const rightLegGroup = new THREE.Group();
+rightLegGroup.position.set( 0.14, 0.89, 0);
+
+const lLeg = makePart(0.28, 0.72, 0.28, PANT, 0, -0.36, 0);
+const rLeg = makePart(0.28, 0.72, 0.28, PANT, 0, -0.36, 0);
+const lBoot = makePart(0.3, 0.18, 0.32, BOOT, 0, -0.77, 0.02);
+const rBoot = makePart(0.3, 0.18, 0.32, BOOT, 0, -0.77, 0.02);
+leftLegGroup.add(lLeg, lBoot);
+rightLegGroup.add(rLeg, rBoot);
+charGroup.add(leftLegGroup, rightLegGroup);
+
+// Character starts near center
+charGroup.position.set(0, 0, 0);
+
+// ─────────────────────────────────────────
+//  CAMERA STATE
+// ─────────────────────────────────────────
+let camYaw   = 0;      // horizontal angle around character
+let camPitch = 0.35;   // vertical tilt
+const CAM_DIST = 7;
+
+// ─────────────────────────────────────────
+//  INPUT STATE
+// ─────────────────────────────────────────
+const keys = { w:false, a:false, s:false, d:false, space:false };
+let isPointerDown = false, lastMX = 0, lastMY = 0;
+const SENSITIVITY = 0.004;
+
+const kEls = { w:'kw', a:'ka', s:'ks', d:'kd', ' ':'kspace' };
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k==='w') keys.w=true;
+  if (k==='a') keys.a=true;
+  if (k==='s') keys.s=true;
+  if (k==='d') keys.d=true;
+  if (k===' ') { keys.space=true; e.preventDefault(); }
+  if (kEls[k]) document.getElementById(kEls[k])?.classList.add('active');
+});
+window.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (k==='w') keys.w=false;
+  if (k==='a') keys.a=false;
+  if (k==='s') keys.s=false;
+  if (k==='d') keys.d=false;
+  if (k===' ') keys.space=false;
+  if (kEls[k]) document.getElementById(kEls[k])?.classList.remove('active');
+});
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isPointerDown = true;
+  lastMX = e.clientX; lastMY = e.clientY;
+});
+window.addEventListener('mouseup',   () => isPointerDown = false);
+window.addEventListener('mousemove', e => {
+  if (!isPointerDown) return;
+  const dx = e.clientX - lastMX;
+  const dy = e.clientY - lastMY;
+  lastMX = e.clientX; lastMY = e.clientY;
+  camYaw   -= dx * SENSITIVITY;
+  camPitch -= dy * SENSITIVITY;
+  camPitch = Math.max(-0.1, Math.min(1.1, camPitch));
+});
+
+// Touch support
+renderer.domElement.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  isPointerDown=true; lastMX=t.clientX; lastMY=t.clientY;
+},{passive:true});
+window.addEventListener('touchend',   () => isPointerDown=false);
+window.addEventListener('touchmove',  e => {
+  if (!isPointerDown) return;
+  const t = e.touches[0];
+  camYaw   -= (t.clientX-lastMX)*SENSITIVITY;
+  camPitch -= (t.clientY-lastMY)*SENSITIVITY;
+  camPitch = Math.max(-0.1, Math.min(1.1, camPitch));
+  lastMX=t.clientX; lastMY=t.clientY;
+},{passive:true});
+
+// ─────────────────────────────────────────
+//  PHYSICS STATE
+// ─────────────────────────────────────────
+let velY = 0;
+const GRAVITY  = -18;
+const JUMP_VEL =  8;
+let   onGround = false;
+
+// Simple block top-of-stack lookup for standing on blocks
+function getGroundY(x, z) {
+  let maxY = 0;
+  for (const b of worldBlocks) {
+    const dx = x - (b.x+0.5), dz = z - (b.z+0.5);
+    if (Math.abs(dx) < 0.45 && Math.abs(dz) < 0.45) {
+      maxY = Math.max(maxY, b.y + 1);
+    }
+  }
+  return maxY;
+}
+
+// ─────────────────────────────────────────
+//  ANIMATION STATE
+// ─────────────────────────────────────────
+let walkCycle = 0;
+let charFacing = 0; // radians, character's visual rotation
+
+// ─────────────────────────────────────────
+//  OVERLAY / START
+// ─────────────────────────────────────────
+let started = false;
+document.getElementById('overlay').addEventListener('click', () => {
+  started = true;
+  document.getElementById('overlay').style.opacity = '0';
+  setTimeout(() => { document.getElementById('overlay').style.display='none'; }, 300);
+});
+
+// ─────────────────────────────────────────
+//  RESIZE
+// ─────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ─────────────────────────────────────────
+//  ANIMATION LOOP
+// ─────────────────────────────────────────
+const clock = new THREE.Clock();
+const px = document.getElementById('px');
+const pz = document.getElementById('pz');
+const stEl = document.getElementById('state');
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (started) {
+    const SPEED = 5.5;
+    let moving = false;
+    let moveX = 0, moveZ = 0;
+
+    // Movement relative to camera yaw
+    if (keys.w) { moveX -= Math.sin(camYaw)*SPEED; moveZ -= Math.cos(camYaw)*SPEED; moving=true; }
+    if (keys.s) { moveX += Math.sin(camYaw)*SPEED; moveZ += Math.cos(camYaw)*SPEED; moving=true; }
+    if (keys.a) { moveX -= Math.cos(camYaw)*SPEED; moveZ += Math.sin(camYaw)*SPEED; moving=true; }
+    if (keys.d) { moveX += Math.cos(camYaw)*SPEED; moveZ -= Math.sin(camYaw)*SPEED; moving=true; }
+
+    charGroup.position.x += moveX * dt;
+    charGroup.position.z += moveZ * dt;
+
+    // Clamp to world bounds
+    charGroup.position.x = Math.max(-38, Math.min(38, charGroup.position.x));
+    charGroup.position.z = Math.max(-38, Math.min(38, charGroup.position.z));
+
+    // Gravity & jump
+    const groundY = getGroundY(charGroup.position.x, charGroup.position.z);
+    velY += GRAVITY * dt;
+    charGroup.position.y += velY * dt;
+
+    if (charGroup.position.y <= groundY) {
+      charGroup.position.y = groundY;
+      velY = 0;
+      onGround = true;
+    } else {
+      onGround = false;
+    }
+
+    if (keys.space && onGround) {
+      velY = JUMP_VEL;
+      onGround = false;
+    }
+
+    // Character facing direction (smooth)
+    if (moving) {
+      const targetFacing = Math.atan2(moveX, moveZ);
+      let diff = targetFacing - charFacing;
+      while (diff >  Math.PI) diff -= Math.PI*2;
+      while (diff < -Math.PI) diff += Math.PI*2;
+      charFacing += diff * Math.min(1, dt * 12);
+      charGroup.rotation.y = charFacing;
+    }
+
+    // Walk animation
+    const walkSpeed = 6;
+    if (moving && onGround) {
+      walkCycle += dt * walkSpeed;
+      stEl.textContent = 'Walking';
+    } else if (!onGround) {
+      stEl.textContent = 'Jumping';
+    } else {
+      walkCycle *= 0.85; // decelerate smoothly
+      stEl.textContent = 'Idle';
+    }
+
+    const swing = Math.sin(walkCycle) * 0.55;
+    leftArmGroup.rotation.x  =  swing;
+    rightArmGroup.rotation.x = -swing;
+    leftLegGroup.rotation.x  = -swing;
+    rightLegGroup.rotation.x =  swing;
+
+    // Head bob slightly while walking
+    if (moving) headGroup.position.y = 1.625 + 0.35 + Math.sin(walkCycle*2)*0.025;
+    else headGroup.position.y += (1.625+0.35 - headGroup.position.y)*0.15;
+
+    // HUD
+    px.textContent = charGroup.position.x.toFixed(1);
+    pz.textContent = charGroup.position.z.toFixed(1);
+  }
+
+  // ── Camera follow ──
+  const cx = charGroup.position.x + Math.sin(camYaw) * Math.cos(camPitch) * CAM_DIST;
+  const cy = charGroup.position.y + Math.sin(camPitch) * CAM_DIST + 1.5;
+  const cz = charGroup.position.z + Math.cos(camYaw) * Math.cos(camPitch) * CAM_DIST;
+
+  camera.position.lerp(new THREE.Vector3(cx, cy, cz), 0.14);
+  camera.lookAt(
+    charGroup.position.x,
+    charGroup.position.y + 1.3,
+    charGroup.position.z
+  );
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
