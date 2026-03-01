@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webblox: Brookhaven RPG (HD Edition)</title>
+    <style>
+        /* ==========================================
+           CSS RESET & BASE STYLES
+           ========================================== */
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000; user-select: none;
+        }
+
+        #game-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+        }
+
+        /* ==========================================
+           SCREENS & OVERLAYS
+           ========================================== */
+        #title-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, rgba(65,140,210,0.9), rgba(20,60,100,0.9));
+            z-index: 100; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: white;
+            backdrop-filter: blur(5px); transition: opacity 0.3s ease;
+        }
+        
+        h1 { font-size: 80px; margin: 0; text-shadow: 4px 4px 0 #000; font-weight: 900; letter-spacing: 2px; text-align: center;}
+        .subtitle { font-size: 20px; margin-top: 10px; margin-bottom: 40px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 8px; }
+        
+        .action-btn {
+            padding: 15px 50px; font-size: 30px; font-weight: bold;
+            background-color: #3b8a3b; color: white; border: 4px solid #fff;
+            border-radius: 12px; cursor: pointer; box-shadow: 0 8px 0 #205c20;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .action-btn:active { transform: translateY(8px); box-shadow: 0 0 0 #205c20; }
+        .action-btn:hover { background-color: #45a045; }
+
+        /* Mouse Status Alert */
+        #mouse-status {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: #ffffaa; padding: 8px 16px;
+            border-radius: 8px; font-weight: bold; font-size: 14px; display: none;
+            border: 1px solid #ffffaa; z-index: 20; text-align: center;
+        }
+
+        /* ==========================================
+           GAME UI OVERLAY
+           ========================================== */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; display: none;
+        }
+        .interactive-ui { pointer-events: auto; }
+
+        /* HUD Elements */
+        #top-right {
+            position: absolute; top: 10px; right: 10px; display: flex;
+            flex-direction: column; gap: 10px; align-items: flex-end;
+        }
+        
+        #top-left {
+            position: absolute; top: 10px; left: 10px; display: flex;
+            flex-direction: column; gap: 10px; align-items: flex-start;
+        }
+
+        /* Leveling System Panel */
+        #level-panel {
+            background-color: rgba(0, 0, 0, 0.8); color: #00ffff;
+            padding: 15px; border-radius: 8px; width: 200px;
+            border: 2px solid #00ffff; font-weight: bold; font-size: 16px;
+            text-shadow: 1px 1px 0 #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .xp-container { width: 100%; height: 12px; background: #333; margin-top: 8px; border-radius: 6px; overflow: hidden; border: 1px solid #555; }
+        #xp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #0088ff, #00ffff); transition: width 0.3s ease; }
+
+        /* Objectives Tracker */
+        #objectives-panel {
+            background-color: rgba(0, 0, 0, 0.8); color: gold;
+            padding: 15px; border-radius: 8px; width: 250px;
+            border: 2px solid gold; font-size: 13px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        #objectives-panel h3 { margin: 0 0 10px 0; font-size: 15px; text-align: center; border-bottom: 1px solid gold; padding-bottom: 5px; text-transform: uppercase; }
+        .objective { margin-bottom: 6px; display: flex; align-items: center; transition: color 0.3s; }
+        .objective input { margin-right: 8px; pointer-events: none; }
+        .completed { text-decoration: line-through; color: #888; }
+
+        /* Sidebar Menus */
+        #sidebar {
+            position: absolute; top: 50%; left: 10px; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .sidebar-btn {
+            width: 70px; height: 60px; background-color: rgba(0, 0, 0, 0.8);
+            color: white; border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 12px; cursor: pointer; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; font-size: 11px;
+            font-weight: bold; text-align: center; transition: 0.2s;
+        }
+        .sidebar-btn span { color: #ffffaa; font-size: 14px; margin-bottom: 2px; }
+        .sidebar-btn:hover { background-color: rgba(255, 255, 255, 0.3); transform: scale(1.05); }
+
+        /* Prompts */
+        #interaction-prompt {
+            position: absolute; bottom: 25%; left: 50%; transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.8); color: white; padding: 12px 24px;
+            border-radius: 8px; font-weight: bold; font-size: 18px; display: none;
+            border: 2px solid white; text-shadow: 1px 1px 0 #000;
+        }
+        #system-message {
+            position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+            color: #55ff55; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 0 #000;
+            opacity: 0; transition: opacity 0.5s; pointer-events: none; text-align: center;
+        }
+
+        /* Modals */
+        .modal {
+            display: none; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); background-color: rgba(30, 30, 40, 0.95);
+            color: white; width: 320px; padding: 20px; border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            z-index: 50;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #555; padding-bottom: 10px; }
+        .close-btn { background: none; border: none; color: #ff5555; font-size: 20px; font-weight: bold; cursor: pointer; }
+        .modal-content button { width: 100%; padding: 12px; margin-bottom: 8px; background-color: #2b78e4; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .modal-content button span { color: #ffffaa; margin-right: 5px; }
+        .modal-content button:hover { background-color: #1a5cbb; }
+        .color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 10px; }
+        .color-btn { height: 40px; border-radius: 4px; border: 2px solid #fff; cursor: pointer; }
+
+        /* Chat */
+        #chat-container {
+            position: absolute; bottom: 20px; left: 20px; width: 350px;
+            display: flex; flex-direction: column; gap: 5px;
+        }
+        #chat-history {
+            background-color: rgba(0, 0, 0, 0.6); color: white; height: 180px;
+            border-radius: 8px; padding: 10px; overflow-y: auto; font-size: 14px;
+            text-shadow: 1px 1px 0 #000; display: flex; flex-direction: column; gap: 4px;
+            pointer-events: auto;
+        }
+        #chat-input {
+            width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.5);
+            background-color: rgba(0,0,0,0.8); color: white; outline: none; box-sizing: border-box;
+            pointer-events: auto;
+        }
+        
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 8px; height: 8px; background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 50%; pointer-events: none; border: 1px solid #000;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="title-screen">
+        <h1>WEBBLOX HD</h1>
+        <p class="subtitle">Procedural RPG Edition</p>
+        <button id="play-btn" class="action-btn">PLAY GAME</button>
+        <div style="margin-top: 30px; font-size: 16px; color: #eee; text-align: center; line-height: 1.5;">
+            <b>Controls:</b><br>
+            Mouse: Look Around | WASD: Move | SPACE: Jump | E: Interact<br>
+            <b>[ALT]</b>: Free Mouse to Use UI | <b>1-6</b>: Quick Menus
+        </div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="crosshair"></div>
+        <div id="mouse-status">Mouse Unlocked. Press [ALT] or click the game to lock.</div>
+        
+        <div id="top-left" class="interactive-ui">
+            <div id="level-panel">
+                Level: <span id="lvl-text">1</span><br>
+                XP: <span id="xp-text">0 / 100</span>
+                <div class="xp-container"><div id="xp-bar"></div></div>
+            </div>
+        </div>
+
+        <div id="top-right" class="interactive-ui">
+            <div id="objectives-panel">
+                <h3>RPG Goals</h3>
+                <div class="objective" id="obj-1"><input type="checkbox" id="chk-1"> Claim a House</div>
+                <div class="objective" id="obj-2"><input type="checkbox" id="chk-2"> Spawn & Drive a Car</div>
+                <div class="objective" id="obj-3"><input type="checkbox" id="chk-3"> Talk to an NPC</div>
+                <div class="objective" id="obj-4"><input type="checkbox" id="chk-4"> Customize Avatar Color</div>
+                <div class="objective" id="obj-5"><input type="checkbox" id="chk-5"> Visit the Hospital</div>
+                <div class="objective" id="obj-6"><input type="checkbox" id="chk-6"> Visit the Police Station</div>
+                <div class="objective" id="obj-7"><input type="checkbox" id="chk-7"> Reach Max Speed in Car</div>
+                <div class="objective" id="obj-8"><input type="checkbox" id="chk-8"> Jump 10 Times (0/10)</div>
+            </div>
+        </div>
+
+        <div id="sidebar" class="interactive-ui">
+            <div class="sidebar-btn" onclick="openModal('avatar-modal')"><span>[1]</span> Avatar</div>
+            <div class="sidebar-btn" onclick="openModal('house-modal')"><span>[2]</span> House</div>
+            <div class="sidebar-btn" onclick="openModal('vehicle-modal')"><span>[3]</span> Car</div>
+        </div>
+
+        <div id="interaction-prompt" class="interactive-ui"></div>
+        <div id="system-message"></div>
+
+        <div id="avatar-modal" class="modal interactive-ui">
+            <div class="modal-header"><b>Avatar Editor</b><button class="close-btn" onclick="closeModal('avatar-modal')">X</button></div>
+            <div class="modal-content">
+                <p style="margin: 0 0 5px 0; font-size: 12px;">Shirt Color:</p>
+                <div class="color-grid">
+                    <button class="color-btn" style="background: #cc4444;" onclick="changeColor('shirt', 0xcc4444)"></button>
+                    <button class="color-btn" style="background: #4466cc;" onclick="changeColor('shirt', 0x4466cc)"></button>
+                    <button class="color-btn" style="background: #44aa44;" onclick="changeColor('shirt', 0x44aa44)"></button>
+                    <button class="color-btn" style="background: #cca844;" onclick="changeColor('shirt', 0xcca844)"></button>
+                    <button class="color-btn" style="background: #222222;" onclick="changeColor('shirt', 0x222222)"></button>
+                    <button class="color-btn" style="background: #dddddd;" onclick="changeColor('shirt', 0xdddddd)"></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="house-modal" class="modal interactive-ui">
+            <div class="modal-header"><b>House Controls</b><button class="close-btn" onclick="closeModal('house-modal')">X</button></div>
+            <div class="modal-content">
+                <p id="house-status" style="font-size: 12px; margin-bottom: 10px; color: #ffcc55;">You don't own a house yet.</p>
+                <button id="btn-lock-house" onclick="toggleHouseLock()" disabled style="background:#555;"><span>[6]</span> Lock/Unlock Doors</button>
+            </div>
+        </div>
+
+        <div id="vehicle-modal" class="modal interactive-ui">
+            <div class="modal-header"><b>Vehicle Spawn</b><button class="close-btn" onclick="closeModal('vehicle-modal')">X</button></div>
+            <div class="modal-content">
+                <button onclick="spawnCar('sedan')"><span>[4]</span> Spawn Sedan</button>
+                <button onclick="spawnCar('truck')" style="background-color: #d35400;"><span>[5]</span> Spawn Truck</button>
+            </div>
+        </div>
+
+        <div id="chat-container" class="interactive-ui">
+            <div id="chat-history">
+                <div style="color: #77ff77;"><i>System: Welcome to HD Webblox!</i></div>
+                <div style="color: #aaa;"><i>Hint: Press ALT to toggle mouse lock!</i></div>
+            </div>
+            <input type="text" id="chat-input" placeholder="Press ALT to unlock, then click here to chat...">
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ==========================================
+        // 1. GAME STATE & GLOBALS
+        // ==========================================
+        let gameActive = false;
+        let isPointerLocked = false;
+        const canvas = document.getElementById('game-canvas');
+        const interactionPrompt = document.getElementById('interaction-prompt');
+        const systemMessage = document.getElementById('system-message');
+        
+        const keys = { w: false, a: false, s: false, d: false, space: false, e: false };
+        let eKeyDebounce = false;
+
+        let isGrounded = false;
+        let yVelocity = 0;
+        const gravity = -0.025;
+        const jumpStrength = 0.65;
+        const moveSpeed = 0.35;
+        let walkTime = 0;
+        let xpTimer = 0;
+
+        let camAzimuth = Math.PI; 
+        let camElevation = Math.PI / 8; 
+        let camDistance = 18;
+        const INVERT_Y = true;
+
+        const MAP_SIZE = 1200; 
+        const colliders = []; 
+        const interactables = []; 
+        let timeOfDay = 8; 
+        const timeScale = 0.03; 
+        const clouds = [];
+        const npcs = [];
+
+        const roadWidth = 40;
+        const blockSpacing = 160;
+
+        const zones = {
+            hospital: { x: -150, z: -150, radius: 40 },
+            police: { x: 150, z: -150, radius: 40 }
+        };
+
+        const playerState = {
+            level: 1, xp: 0, maxLevel: 10,
+            ownedHouseId: null, houseLocked: false,
+            inCar: false, activeCar: null,
+            jumps: 0,
+            quests: { q1: false, q2: false, q3: false, q4: false, q5: false, q6: false, q7: false, q8: false }
+        };
+
+        // ==========================================
+        // 2. PROCEDURAL TEXTURES GENERATION
+        // ==========================================
+        function createNoiseTexture(w, h, base, dot1, dot2, density) {
+            const cvs = document.createElement('canvas');
+            cvs.width = w; cvs.height = h;
+            const ctx = cvs.getContext('2d');
+            ctx.fillStyle = base; ctx.fillRect(0,0,w,h);
+            for(let i=0; i<density; i++){
+                ctx.fillStyle = Math.random()>0.5 ? dot1 : dot2;
+                ctx.fillRect(Math.random()*w, Math.random()*h, 1.5, 1.5);
+            }
+            const tex = new THREE.CanvasTexture(cvs);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createWoodTexture() {
+            const cvs = document.createElement('canvas');
+            cvs.width = 128; cvs.height = 128;
+            const ctx = cvs.getContext('2d');
+            ctx.fillStyle = '#5c4028'; ctx.fillRect(0,0,128,128);
+            ctx.fillStyle = '#3a2412';
+            for(let i=0; i<300; i++){
+                ctx.fillRect(Math.random()*128, 0, Math.random()*2+0.5, 128);
+            }
+            const tex = new THREE.CanvasTexture(cvs);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createGrassBladeTexture() {
+            const cvs = document.createElement('canvas');
+            cvs.width = 32; cvs.height = 64;
+            const ctx = cvs.getContext('2d');
+            ctx.clearRect(0,0,32,64);
+            ctx.fillStyle = '#4c7a34';
+            ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(24,64); ctx.lineTo(8,64); ctx.fill();
+            const tex = new THREE.CanvasTexture(cvs);
+            return tex;
+        }
+
+        const texGrass = createNoiseTexture(256, 256, '#466d35', '#38572a', '#52823f', 15000); texGrass.repeat.set(20, 20);
+        const texRoad = createNoiseTexture(256, 256, '#424242', '#333333', '#555555', 20000); texRoad.repeat.set(15, 15);
+        const texConcrete = createNoiseTexture(128, 128, '#aaaaaa', '#999999', '#bbbbbb', 5000); texConcrete.repeat.set(10, 10);
+        const texStucco = createNoiseTexture(128, 128, '#ffffff', '#e0e0e0', '#f5f5f5', 3000); texStucco.repeat.set(2, 2);
+        const texWood = createWoodTexture(); texWood.repeat.set(2, 2);
+        const texBlade = createGrassBladeTexture();
+
+        // ==========================================
+        // 3. THREE.JS SCENE & MATERIALS SETUP
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x6CB4EE, 0.002);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const matGrass = new THREE.MeshStandardMaterial({ map: texGrass, roughness: 1.0 });
+        const matRoad = new THREE.MeshStandardMaterial({ map: texRoad, roughness: 0.9 });
+        const matWood = new THREE.MeshStandardMaterial({ map: texWood, roughness: 0.9 });
+        const matLeaves = new THREE.MeshStandardMaterial({ color: 0x3d6e32, roughness: 0.9 }); 
+        const matPine = new THREE.MeshStandardMaterial({ color: 0x2d4f24, roughness: 0.9 }); 
+        const matGlass = new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.4, roughness: 0.1 });
+        const matConcrete = new THREE.MeshStandardMaterial({ map: texConcrete, roughness: 0.8 });
+
+        // ==========================================
+        // 4. LIGHTING & WEATHER
+        // ==========================================
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xfff8d6, 1.3);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 1000;
+        const d = 300;
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
+        const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(20, 16, 16), new THREE.MeshBasicMaterial({ color: 0xfff8d6 }));
+        scene.add(sunMesh);
+
+        const moonLight = new THREE.DirectionalLight(0xaaccff, 0.15);
+        moonLight.castShadow = true;
+        scene.add(moonLight);
+        const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), new THREE.MeshBasicMaterial({ color: 0xeef5ff }));
+        scene.add(moonMesh);
+
+        for(let i=0; i<50; i++) {
+            const cloudGroup = new THREE.Group();
+            for(let j=0; j<Math.floor(Math.random() * 4) + 3; j++) {
+                const c = new THREE.Mesh(new THREE.BoxGeometry(Math.random()*20+15, Math.random()*10+5, Math.random()*20+15), new THREE.MeshStandardMaterial({color: 0xffffff, transparent: true, opacity: 0.85, flatShading: true}));
+                c.position.set((Math.random()-0.5)*30, (Math.random()-0.5)*10, (Math.random()-0.5)*30);
+                cloudGroup.add(c);
+            }
+            cloudGroup.position.set((Math.random()-0.5)*MAP_SIZE, 120 + Math.random()*40, (Math.random()-0.5)*MAP_SIZE);
+            scene.add(cloudGroup);
+            clouds.push({ mesh: cloudGroup, speed: Math.random() * 0.15 + 0.05 });
+        }
+
+        // ==========================================
+        // 5. PROCEDURAL WORLD & GRASS INSTANCING
+        // ==========================================
+        const baseGround = new THREE.Mesh(new THREE.BoxGeometry(MAP_SIZE, 2, MAP_SIZE), matRoad);
+        baseGround.position.y = -1.1; 
+        baseGround.receiveShadow = true;
+        scene.add(baseGround);
+
+        function addAABB(cx, cz, w, depth) {
+            colliders.push({ minX: cx - w/2, maxX: cx + w/2, minZ: cz - depth/2, maxZ: cz + depth/2 });
+        }
+
+        const blockSize = blockSpacing - roadWidth; // 120
+        const grassBlocksCoords = [];
+
+        for (let i = -MAP_SIZE/2 + blockSpacing/2; i <= MAP_SIZE/2; i += blockSpacing) {
+            for (let j = -MAP_SIZE/2 + blockSpacing/2; j <= MAP_SIZE/2; j += blockSpacing) {
+                const block = new THREE.Mesh(new THREE.BoxGeometry(blockSize, 2, blockSize), matGrass);
+                block.position.set(i, -1.0, j); 
+                block.receiveShadow = true;
+                scene.add(block);
+                grassBlocksCoords.push({x: i, z: j});
+            }
+        }
+
+        // --- INSTANCED GRASS BLADES ---
+        const totalGrassBlades = 25000;
+        const instGrassGeo = new THREE.PlaneGeometry(1.5, 2.5);
+        instGrassGeo.translate(0, 1.25, 0); 
+        const instGrassMat = new THREE.MeshStandardMaterial({ map: texBlade, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1 });
+        const instancedGrass = new THREE.InstancedMesh(instGrassGeo, instGrassMat, totalGrassBlades);
+        scene.add(instancedGrass);
+
+        const dummy = new THREE.Object3D();
+        let grassIdx = 0;
+        const bladesPerBlock = Math.floor(totalGrassBlades / grassBlocksCoords.length);
+        for(let block of grassBlocksCoords) {
+            for(let g=0; g < bladesPerBlock; g++) {
+                if (grassIdx >= totalGrassBlades) break;
+                if(Math.abs(block.x) < 100 && Math.abs(block.z) < 100) continue; 
+                
+                const rx = block.x + (Math.random()-0.5) * blockSize;
+                const rz = block.z + (Math.random()-0.5) * blockSize;
+                dummy.position.set(rx, 0, rz);
+                dummy.rotation.y = Math.random() * Math.PI;
+                const scale = Math.random() * 0.5 + 0.5;
+                dummy.scale.set(scale, scale, scale);
+                dummy.updateMatrix();
+                instancedGrass.setMatrixAt(grassIdx++, dummy.matrix);
+            }
+        }
+        instancedGrass.count = grassIdx; 
+
+        function getGroundY(x, z) {
+            const gridX = Math.round(x / blockSpacing) * blockSpacing;
+            const gridZ = Math.round(z / blockSpacing) * blockSpacing;
+            const distRoadX = Math.abs(x - gridX);
+            const distRoadZ = Math.abs(z - gridZ);
+            if (distRoadX < roadWidth/2 || distRoadZ < roadWidth/2) return -0.1;
+            return 0.0;
+        }
+
+        const centerPlaza = new THREE.Mesh(new THREE.BoxGeometry(blockSize, 2.05, blockSize), matConcrete);
+        centerPlaza.position.set(0, -1.0, 0); centerPlaza.receiveShadow = true; scene.add(centerPlaza);
+        
+        const fountain = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 4, 16), matConcrete);
+        fountain.position.set(0, 2, 0); fountain.castShadow = true; fountain.receiveShadow = true; scene.add(fountain);
+        const water = new THREE.Mesh(new THREE.CylinderGeometry(13, 13, 1, 16), matGlass);
+        water.position.set(0, 4, 0); scene.add(water);
+        addAABB(0, 0, 30, 30);
+
+        // Houses & Special Buildings
+        let houseIdCounter = 0;
+        function generateHouse(x, z, rotation) {
+            const hGroup = new THREE.Group();
+            hGroup.position.set(x, 0, z); hGroup.rotation.y = rotation;
+            
+            const colors = [0xff8888, 0x88ccff, 0x88ffaa, 0xffcc88, 0xeeeeee];
+            const matWall = new THREE.MeshStandardMaterial({ map: texStucco, color: colors[Math.floor(Math.random() * colors.length)], roughness: 0.9 });
+            
+            const mainW = 30, mainD = 25, height = 15;
+            const mainBody = new THREE.Mesh(new THREE.BoxGeometry(mainW, height, mainD), matWall);
+            mainBody.position.set(0, height/2, 0); mainBody.castShadow = true; hGroup.add(mainBody);
+            const mainRoof = new THREE.Mesh(new THREE.ConeGeometry(22, 12, 4), new THREE.MeshStandardMaterial({ color: 0x333b47, roughness: 0.8 }));
+            mainRoof.rotation.y = Math.PI/4; mainRoof.position.set(0, height + 6, 0); mainRoof.castShadow = true; hGroup.add(mainRoof);
+
+            const doorMat = new THREE.MeshStandardMaterial({map: texWood});
+            const door = new THREE.Mesh(new THREE.BoxGeometry(5, 8, 1), doorMat);
+            door.position.set(0, 4, mainD/2 + 0.5); hGroup.add(door);
+
+            scene.add(hGroup);
+            const absW = Math.abs(Math.cos(rotation) * mainW) + Math.abs(Math.sin(rotation) * mainD);
+            const absD = Math.abs(Math.sin(rotation) * mainW) + Math.abs(Math.cos(rotation) * mainD);
+            addAABB(x, z, absW + 5, absD + 5);
+            interactables.push({ type: 'house', id: "House_" + houseIdCounter++, x: x, z: z, doorMat: doorMat, owner: null });
+        }
+
+        function generateSpecialBuilding(x, z, type) {
+            const bGroup = new THREE.Group();
+            bGroup.position.set(x, 0, z);
+            let matWall, w=50, d=40, h=25;
+            if (type === 'hospital') {
+                matWall = new THREE.MeshStandardMaterial({ map: texStucco, color: 0xffffff });
+                const crossMat = new THREE.MeshStandardMaterial({color: 0xcc2222});
+                const c1 = new THREE.Mesh(new THREE.BoxGeometry(4, 12, 1), crossMat); c1.position.set(0, h+8, d/2+0.1); bGroup.add(c1);
+                const c2 = new THREE.Mesh(new THREE.BoxGeometry(12, 4, 1), crossMat); c2.position.set(0, h+8, d/2+0.1); bGroup.add(c2);
+            } else if (type === 'police') {
+                matWall = new THREE.MeshStandardMaterial({ map: texStucco, color: 0x224488 });
+                const badge = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 1, 6), new THREE.MeshStandardMaterial({color: 0xeebb33}));
+                badge.rotation.x = Math.PI/2; badge.position.set(0, h+6, d/2+0.1); bGroup.add(badge);
+            }
+            const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matWall);
+            body.position.y = h/2; body.castShadow = true; bGroup.add(body);
+            scene.add(bGroup); addAABB(x, z, w+5, d+5);
+        }
+
+        generateSpecialBuilding(zones.hospital.x, zones.hospital.z, 'hospital');
+        generateSpecialBuilding(zones.police.x, zones.police.z, 'police');
+
+        let housesPlaced = 0;
+        for (let block of grassBlocksCoords) {
+            if (Math.abs(block.x) < 100 && Math.abs(block.z) < 100) continue; 
+            if (block.x === zones.hospital.x && block.z === zones.hospital.z) continue;
+            if (block.x === zones.police.x && block.z === zones.police.z) continue;
+            if (Math.random() > 0.3 && housesPlaced < 45) {
+                generateHouse(block.x, block.z, Math.random() > 0.5 ? 0 : Math.PI/2); housesPlaced++;
+            }
+        }
+
+        // --- ECOSYSTEM: DIVERSE TREES ---
+        function createTree(x, z, type) {
+            const tGroup = new THREE.Group();
+            tGroup.position.set(x, 0, z);
+            
+            if (type === 0) { // Oak
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.8, 10, 7), matWood);
+                trunk.position.y = 5; trunk.castShadow = true; tGroup.add(trunk);
+                const leaves = new THREE.Mesh(new THREE.DodecahedronGeometry(7, 1), matLeaves);
+                leaves.position.y = 11; leaves.castShadow = true; tGroup.add(leaves);
+            } else if (type === 1) { // Pine
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.5, 8, 6), matWood);
+                trunk.position.y = 4; trunk.castShadow = true; tGroup.add(trunk);
+                const l1 = new THREE.Mesh(new THREE.ConeGeometry(6, 10, 8), matPine);
+                l1.position.y = 9; l1.castShadow = true; tGroup.add(l1);
+                const l2 = new THREE.Mesh(new THREE.ConeGeometry(4, 8, 8), matPine);
+                l2.position.y = 14; l2.castShadow = true; tGroup.add(l2);
+            } else { // Birch
+                const matBirch = new THREE.MeshStandardMaterial({map: texStucco}); 
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 12, 6), matBirch);
+                trunk.position.y = 6; trunk.castShadow = true; tGroup.add(trunk);
+                const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(6, 0), new THREE.MeshStandardMaterial({color: 0x6ca349, roughness:0.9}));
+                leaves.position.y = 13; leaves.castShadow = true; tGroup.add(leaves);
+            }
+            scene.add(tGroup);
+            addAABB(x, z, 3, 3);
+        }
+
+        for(let i=0; i<350; i++) {
+            const tx = (Math.random() - 0.5) * MAP_SIZE;
+            const tz = (Math.random() - 0.5) * MAP_SIZE;
+            if (getGroundY(tx, tz) === 0.0) { 
+                const localX = Math.abs(tx % blockSpacing);
+                const localZ = Math.abs(tz % blockSpacing);
+                if (localX > roadWidth/2 + 5 && localZ > roadWidth/2 + 5) {
+                    createTree(tx, tz, Math.floor(Math.random() * 3));
+                }
+            }
+        }
+
+        // ==========================================
+        // 6. RPG LEVELING SYSTEM
+        // ==========================================
+        function gainXP(amount) {
+            if (playerState.level >= playerState.maxLevel) return;
+            playerState.xp += amount;
+            let needed = playerState.level * 100;
+            if (playerState.xp >= needed) {
+                playerState.xp -= needed; playerState.level++;
+                showSystemMessage(`LEVEL UP! You are Level ${playerState.level}!`);
+                if (playerState.level >= playerState.maxLevel) {
+                    playerState.xp = 0;
+                    document.getElementById('xp-text').innerText = "MAX";
+                    document.getElementById('xp-bar').style.width = "100%";
+                    return;
+                }
+            }
+            updateLevelUI();
+        }
+
+        function updateLevelUI() {
+            if (playerState.level >= playerState.maxLevel) return;
+            document.getElementById('lvl-text').innerText = playerState.level;
+            let needed = playerState.level * 100;
+            document.getElementById('xp-text').innerText = `${Math.floor(playerState.xp)} / ${needed}`;
+            document.getElementById('xp-bar').style.width = `${(playerState.xp / needed) * 100}%`;
+        }
+
+        // ==========================================
+        // 7. CHARACTER & NPC RIG
+        // ==========================================
+        function createAdvancedCharacter(skinHex, shirtHex, pantsHex) {
+            const group = new THREE.Group();
+            const matS = new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.6 });
+            const matT = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.8 });
+            const matP = new THREE.MeshStandardMaterial({ color: pantsHex, roughness: 0.8 });
+
+            const createCapsule = (r, l, mat, py) => {
+                const g = new THREE.Group();
+                const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 4, 16), mat);
+                m.position.y = -py; m.castShadow = true; g.add(m); return g;
+            };
+
+            const headGroup = new THREE.Group();
+            headGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), matS));
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0x000000});
+            const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.15), eyeMat); eyeL.position.set(-0.4, 0.2, 1.15); headGroup.add(eyeL);
+            const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.15), eyeMat); eyeR.position.set(0.4, 0.2, 1.15); headGroup.add(eyeR);
+            headGroup.position.y = 5.5; group.add(headGroup);
+
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.2, 3, 16), matT);
+            torso.position.y = 3.5; torso.castShadow = true; group.add(torso);
+
+            const armL = createCapsule(0.6, 1.5, matS, 1); armL.position.set(-2.2, 4.5, 0); group.add(armL);
+            const armR = createCapsule(0.6, 1.5, matS, 1); armR.position.set(2.2, 4.5, 0); group.add(armR);
+            const legL = createCapsule(0.7, 1.8, matP, 1.2); legL.position.set(-0.7, 2.2, 0); group.add(legL);
+            const legR = createCapsule(0.7, 1.8, matP, 1.2); legR.position.set(0.7, 2.2, 0); group.add(legR);
+
+            return { group, mats: { shirt: matT }, limbs: { armL, armR, legL, legR, torso } };
+        }
+
+        const player = createAdvancedCharacter(0xfcccb4, 0x4466cc, 0x222222);
+        player.group.position.set(0, 5, 20); 
+        scene.add(player.group);
+
+        window.changeColor = function(part, hex) {
+            if(part === 'shirt') player.mats.shirt.color.setHex(hex);
+            completeObjective(4); gainXP(50);
+            closeModal('avatar-modal');
+        };
+
+        for(let i=0; i<10; i++) {
+            const npc = createAdvancedCharacter(0xfcccb4, [0xcc4444, 0x44aa44, 0xcca844][i%3], 0x333333);
+            npc.group.position.set((Math.random()-0.5)*300, 0, (Math.random()-0.5)*300);
+            scene.add(npc.group);
+            npcs.push({ data: npc, targetX: npc.group.position.x, targetZ: npc.group.position.z, state: 'idle', timer: 0 });
+            interactables.push({ type: 'npc', id: i, x: npc.group.position.x, z: npc.group.position.z, obj: npc });
+        }
+
+
+        // ==========================================
+        // 8. VEHICLE SYSTEM
+        // ==========================================
+        const cars = [];
+        const maxCarSpeed = 0.8;
+        
+        function createCarModel(type) {
+            const g = new THREE.Group();
+            const matBody = new THREE.MeshStandardMaterial({ color: type === 'truck' ? 0xd35400 : 0x2980b9, roughness: 0.4 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.6, type==='truck'?8.5:7.5), matBody);
+            body.position.y = 1.3; body.castShadow = true; g.add(body);
+            
+            const cab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.6, type==='truck'?3.5:4.5), new THREE.MeshStandardMaterial({color: 0x111111}));
+            cab.position.set(0, 2.9, type==='truck'? 1.5 : -0.5); g.add(cab);
+
+            const wheels = [];
+            const offsets = [[-2.3, 0.7, 2.8], [2.3, 0.7, 2.8], [-2.3, 0.7, -2.8], [2.3, 0.7, -2.8]];
+            offsets.forEach(pos => {
+                const pivot = new THREE.Group(); pivot.position.set(...pos); g.add(pivot);
+                const wMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.8, 20), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+                wMesh.rotation.z = Math.PI / 2; wMesh.castShadow = true;
+                pivot.add(wMesh); wheels.push(wMesh); 
+            });
+            return { group: g, wheels: wheels, velocity: 0 };
+        }
+
+        window.spawnCar = function(type) {
+            if (playerState.activeCar) { scene.remove(playerState.activeCar.group); cars.splice(cars.indexOf(playerState.activeCar), 1); }
+            const car = createCarModel(type);
+            const forward = new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), player.group.rotation.y);
+            car.group.position.copy(player.group.position).add(forward.multiplyScalar(8));
+            car.group.rotation.y = player.group.rotation.y;
+            car.group.position.y = getGroundY(car.group.position.x, car.group.position.z);
+            scene.add(car.group); cars.push(car); playerState.activeCar = car;
+            showSystemMessage(`Spawned ${type.toUpperCase()}!`);
+            closeModal('vehicle-modal');
+        };
+
+        // ==========================================
+        // 9. HOTKEYS, ALT KEY LOGIC & POINTER LOCK
+        // ==========================================
+        canvas.addEventListener('click', () => { if(gameActive && !isPointerLocked) canvas.requestPointerLock(); });
+
+        document.addEventListener('pointerlockchange', () => {
+            isPointerLocked = (document.pointerLockElement === canvas);
+            if(isPointerLocked) {
+                document.getElementById('crosshair').style.display = 'block';
+                document.getElementById('mouse-status').style.display = 'none';
+                document.getElementById('chat-input').blur();
+            } else {
+                document.getElementById('crosshair').style.display = 'none';
+                if(gameActive) document.getElementById('mouse-status').style.display = 'block';
+                // Reset keys to prevent getting stuck walking if unlocked while pressing a key
+                keys.w = keys.a = keys.s = keys.d = keys.space = false;
+            }
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (isPointerLocked && gameActive) {
+                camAzimuth -= e.movementX * 0.003; 
+                camElevation += e.movementY * 0.003 * (INVERT_Y ? -1 : 1); 
+                camElevation = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, camElevation));
+            }
+        });
+
+        // Keyboard System (ALT lock, Spacebar, Hotkeys)
+        window.addEventListener('keydown', e => {
+            if(!gameActive) return;
+            
+            // ALT KEY LOGIC: Unlocks/locks mouse seamlessly WITHOUT pausing the game
+            if (e.key === 'Alt') {
+                e.preventDefault(); 
+                if (isPointerLocked) document.exitPointerLock();
+                else canvas.requestPointerLock();
+                return;
+            }
+
+            const k = e.key.toLowerCase();
+            if (k === ' ' || e.code === 'Space') keys.space = true;
+            else if (keys.hasOwnProperty(k)) keys[k] = true;
+            
+            const cInput = document.getElementById('chat-input');
+            const isTyping = (document.activeElement === cInput);
+
+            if (!isPointerLocked && !isTyping && (k === '/' || k === 'enter')) {
+                e.preventDefault(); cInput.focus();
+            } else if (isTyping && k === 'enter') {
+                submitChat();
+            }
+
+            if (!isTyping) {
+                if (k === '1') window.openModal('avatar-modal');
+                if (k === '2') window.openModal('house-modal');
+                if (k === '3') window.openModal('vehicle-modal');
+                if (k === '4') window.spawnCar('sedan');
+                if (k === '5') window.spawnCar('truck');
+                if (k === '6') window.toggleHouseLock();
+            }
+        });
+
+        // Prevent default ALT behavior on keyup so browser menu doesn't focus
+        window.addEventListener('keyup', e => {
+            if (e.key === 'Alt') { e.preventDefault(); return; }
+            const k = e.key.toLowerCase();
+            if (k === ' ' || e.code === 'Space') keys.space = false;
+            else if (keys.hasOwnProperty(k)) keys[k] = false;
+        });
+
+        // ==========================================
+        // 10. GAME LOOP & PHYSICS
+        // ==========================================
+        const clock = new THREE.Clock();
+
+        function checkCollision(x, z, size) {
+            const hw = size/2;
+            for (let c of colliders) {
+                if (x - hw < c.maxX && x + hw > c.minX && z - hw < c.maxZ && z + hw > c.minZ) return true;
+            }
+            return false;
+        }
+
+        function toggleCar() {
+            playerState.inCar = !playerState.inCar;
+            if (playerState.inCar) {
+                player.group.visible = false; completeObjective(2); gainXP(20);
+            } else {
+                player.group.visible = true;
+                const offset = new THREE.Vector3(-5, 0, 0).applyAxisAngle(new THREE.Vector3(0,1,0), playerState.activeCar.group.rotation.y);
+                player.group.position.copy(playerState.activeCar.group.position).add(offset);
+                player.group.position.y = getGroundY(player.group.position.x, player.group.position.z);
+            }
+        }
+
+        function completeObjective(num) {
+            const qKey = 'q' + num;
+            if (!playerState.quests[qKey]) {
+                playerState.quests[qKey] = true;
+                const chk = document.getElementById('chk-' + num); if(chk) chk.checked = true;
+                const obj = document.getElementById('obj-' + num); if(obj) obj.classList.add('completed');
+                showSystemMessage("Objective " + num + " Complete!");
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            // Notice: The game continues rendering and updating physics even if mouse is unlocked!
+            if (!gameActive) return; 
+            
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            timeOfDay += delta * timeScale;
+            if (timeOfDay >= 24) timeOfDay -= 24;
+            const timeAngle = (timeOfDay / 24) * Math.PI * 2 - Math.PI/2;
+            sunLight.position.set(Math.cos(timeAngle) * 600, Math.sin(timeAngle) * 600, 100);
+            sunMesh.position.copy(sunLight.position);
+            moonLight.position.set(Math.cos(timeAngle + Math.PI) * 600, Math.sin(timeAngle + Math.PI) * 600, -100);
+            moonMesh.position.copy(moonLight.position);
+
+            if (sunLight.position.y > 0) { 
+                const intensity = Math.min(sunLight.position.y / 150, 1);
+                sunLight.intensity = intensity * 1.3; moonLight.intensity = 0;
+                scene.background = new THREE.Color().lerpColors(new THREE.Color(0x1a2a4a), new THREE.Color(0x6CB4EE), intensity);
+                scene.fog.color.copy(scene.background);
+            } else { 
+                sunLight.intensity = 0; moonLight.intensity = 0.2;
+                scene.background = new THREE.Color(0x1a2a4a); scene.fog.color.setHex(0x1a2a4a);
+            }
+
+            clouds.forEach(c => { c.mesh.position.x += c.speed; if(c.mesh.position.x > MAP_SIZE/2) c.mesh.position.x = -MAP_SIZE/2; });
+
+            const px = player.group.position.x; const pz = player.group.position.z;
+            if (!playerState.quests.q5 && Math.hypot(px - zones.hospital.x, pz - zones.hospital.z) < zones.hospital.radius) { completeObjective(5); gainXP(50); }
+            if (!playerState.quests.q6 && Math.hypot(px - zones.police.x, pz - zones.police.z) < zones.police.radius) { completeObjective(6); gainXP(50); }
+
+            npcs.forEach(npc => {
+                npc.timer -= delta; const obj = npc.data.group;
+                const inter = interactables.find(i => i.id === npc.id && i.type === 'npc');
+                if(inter) { inter.x = obj.position.x; inter.z = obj.position.z; }
+
+                const targetY = getGroundY(obj.position.x, obj.position.z);
+                obj.position.y += (targetY - obj.position.y) * 0.1;
+
+                if (npc.timer <= 0) {
+                    if (npc.state === 'idle') {
+                        npc.state = 'walking'; npc.timer = Math.random() * 6 + 3;
+                        npc.targetX = obj.position.x + (Math.random()-0.5)*60; npc.targetZ = obj.position.z + (Math.random()-0.5)*60;
+                    } else { npc.state = 'idle'; npc.timer = Math.random() * 4 + 1; }
+                }
+
+                if (npc.state === 'walking') {
+                    const dx = npc.targetX - obj.position.x; const dz = npc.targetZ - obj.position.z;
+                    const dist = Math.hypot(dx, dz);
+                    if (dist > 1) {
+                        obj.position.x += (dx/dist) * delta * 6; obj.position.z += (dz/dist) * delta * 6;
+                        const targetRot = Math.atan2(dx, dz);
+                        obj.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), targetRot), 0.1);
+                        
+                        const walk = Math.sin(Date.now() * 0.012) * 0.9;
+                        npc.data.limbs.armL.rotation.x = -walk; npc.data.limbs.armR.rotation.x = walk;
+                        npc.data.limbs.legL.rotation.x = walk; npc.data.limbs.legR.rotation.x = -walk;
+                        npc.data.limbs.torso.position.y = 3.5 + Math.abs(Math.sin(Date.now()*0.024))*0.2;
+                    } else { npc.state = 'idle'; }
+                } else {
+                    npc.data.limbs.armL.rotation.x *= 0.8; npc.data.limbs.armR.rotation.x *= 0.8;
+                    npc.data.limbs.legL.rotation.x *= 0.8; npc.data.limbs.legR.rotation.x *= 0.8;
+                    npc.data.limbs.torso.position.y = 3.5 + Math.sin(Date.now()*0.002)*0.05;
+                }
+            });
+
+            let promptText = ""; let canInteract = false; let interactAction = null;
+
+            if (!playerState.inCar) {
+                for(let i of interactables) {
+                    if (Math.hypot(px - i.x, pz - i.z) < 18) {
+                        if (i.type === 'house') {
+                            promptText = i.owner === 'player' ? "[E] Manage House" : "[E] Claim House"; canInteract = true;
+                            interactAction = () => {
+                                if(i.owner === null && playerState.ownedHouseId === null) {
+                                    i.owner = 'player'; playerState.ownedHouseId = i.id;
+                                    i.doorMat.color.setHex(0x00ff00); 
+                                    document.getElementById('house-status').innerText = "House Claimed!";
+                                    document.getElementById('house-status').style.color = "#00ff00";
+                                    document.getElementById('btn-lock-house').disabled = false;
+                                    document.getElementById('btn-lock-house').style.background = "#d9534f";
+                                    completeObjective(1); gainXP(100);
+                                }
+                                document.exitPointerLock(); window.openModal('house-modal');
+                            }; break;
+                        } else if (i.type === 'npc') {
+                            promptText = "[E] Talk to NPC"; canInteract = true;
+                            interactAction = () => { showSystemMessage("NPC: Working hard to level up?"); completeObjective(3); gainXP(20); }; break;
+                        }
+                    }
+                }
+                if (playerState.activeCar && player.group.position.distanceTo(playerState.activeCar.group.position) < 10) {
+                    promptText = "[E] Drive Vehicle"; canInteract = true; interactAction = toggleCar;
+                }
+            } else { promptText = "[E] Exit Vehicle"; canInteract = true; interactAction = toggleCar; }
+
+            // Can only interact via 'E' if mouse is locked 
+            if (canInteract && isPointerLocked) {
+                interactionPrompt.innerText = promptText; interactionPrompt.style.display = 'block';
+                if (keys.e && !eKeyDebounce) { interactAction(); eKeyDebounce = true; }
+            } else { interactionPrompt.style.display = 'none'; }
+            if (!keys.e) eKeyDebounce = false;
+
+
+            let targetPos;
+
+            if (playerState.inCar && playerState.activeCar) {
+                const car = playerState.activeCar;
+                
+                if (keys.w) car.velocity += 0.015;
+                if (keys.s) car.velocity -= 0.015;
+                car.velocity *= 0.95; 
+                
+                if (Math.abs(car.velocity) >= maxCarSpeed * 0.95) { completeObjective(7); gainXP(1); }
+                if (Math.abs(car.velocity) > 0.1) { xpTimer += delta; if (xpTimer > 1) { gainXP(5); xpTimer = 0; } }
+
+                if (Math.abs(car.velocity) > 0.05) {
+                    const dir = car.velocity > 0 ? 1 : -1;
+                    if (keys.a) car.group.rotation.y += 0.05 * dir;
+                    if (keys.d) car.group.rotation.y -= 0.05 * dir;
+                }
+
+                const moveVec = new THREE.Vector3(0, 0, car.velocity).applyAxisAngle(new THREE.Vector3(0,1,0), car.group.rotation.y);
+                const nx = car.group.position.x + moveVec.x; const nz = car.group.position.z + moveVec.z;
+
+                if (!checkCollision(nx, car.group.position.z, 9)) car.group.position.x = nx; else car.velocity *= -0.4;
+                if (!checkCollision(car.group.position.x, nz, 9)) car.group.position.z = nz; else car.velocity *= -0.4;
+
+                const targetY = getGroundY(car.group.position.x, car.group.position.z);
+                car.group.position.y += (targetY - car.group.position.y) * 0.2; 
+                
+                car.wheels.forEach(w => w.rotation.x += car.velocity * 0.6);
+                player.group.position.copy(car.group.position);
+                targetPos = car.group.position.clone();
+
+            } else {
+                
+                const currentGroundY = getGroundY(player.group.position.x, player.group.position.z);
+
+                if (!isGrounded) yVelocity += gravity;
+                player.group.position.y += yVelocity;
+                
+                if (player.group.position.y <= currentGroundY) {
+                    player.group.position.y = currentGroundY; 
+                    yVelocity = 0; 
+                    isGrounded = true;
+                } else { isGrounded = false; }
+
+                if (keys.space && isGrounded && isPointerLocked) { 
+                    yVelocity = jumpStrength; isGrounded = false; 
+                    playerState.jumps++;
+                    document.getElementById('obj-8').innerHTML = `<input type="checkbox" id="chk-8"> Jump 10 Times (${Math.min(playerState.jumps, 10)}/10)`;
+                    if(playerState.jumps >= 10) completeObjective(8);
+                    gainXP(2); 
+                }
+
+                let isMoving = false;
+                const moveVec = new THREE.Vector3(0,0,0);
+                const forward = new THREE.Vector3(Math.sin(camAzimuth), 0, Math.cos(camAzimuth));
+                const right = new THREE.Vector3(forward.z, 0, -forward.x);
+
+                // Allows player to move WASD even when mouse is unlocked, provided window has focus
+                if (keys.w) { moveVec.sub(forward); isMoving = true; }
+                if (keys.s) { moveVec.add(forward); isMoving = true; }
+                if (keys.a) { moveVec.sub(right); isMoving = true; }
+                if (keys.d) { moveVec.add(right); isMoving = true; }
+
+                if (isMoving) {
+                    xpTimer += delta; if (xpTimer > 1) { gainXP(2); xpTimer = 0; }
+
+                    moveVec.normalize().multiplyScalar(moveSpeed);
+                    const nx = player.group.position.x + moveVec.x; const nz = player.group.position.z + moveVec.z;
+
+                    if (!checkCollision(nx, player.group.position.z, 3)) player.group.position.x = nx;
+                    if (!checkCollision(player.group.position.x, nz, 3)) player.group.position.z = nz;
+
+                    const targetRot = Math.atan2(moveVec.x, moveVec.z);
+                    player.group.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), targetRot), 0.2);
+
+                    walkTime += delta * 18;
+                    const swing = Math.sin(walkTime) * 0.9;
+                    player.limbs.armL.rotation.x = -swing; player.limbs.armR.rotation.x = swing;
+                    player.limbs.legL.rotation.x = swing; player.limbs.legR.rotation.x = -swing;
+                    player.limbs.torso.position.y = 3.5 + Math.abs(Math.sin(walkTime*2))*0.2; 
+                } else {
+                    walkTime = 0;
+                    player.limbs.armL.rotation.x *= 0.8; player.limbs.armR.rotation.x *= 0.8;
+                    player.limbs.legL.rotation.x *= 0.8; player.limbs.legR.rotation.x *= 0.8;
+                    player.limbs.torso.position.y = 3.5 + Math.sin(Date.now()*0.003)*0.05; 
+                }
+                
+                targetPos = player.group.position.clone();
+                targetPos.y += 4; 
+            }
+
+            const cx = targetPos.x + camDistance * Math.cos(camElevation) * Math.sin(camAzimuth);
+            const cy = targetPos.y + camDistance * Math.sin(camElevation);
+            const cz = targetPos.z + camDistance * Math.cos(camElevation) * Math.cos(camAzimuth);
+            
+            camera.position.set(cx, Math.max(0.5, cy), cz); 
+            camera.lookAt(targetPos);
+
+            renderer.render(scene, camera);
+        }
+
+        // ==========================================
+        // 11. INITIALIZATION
+        // ==========================================
+        document.getElementById('play-btn').addEventListener('click', () => {
+            document.getElementById('title-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('title-screen').style.display = 'none';
+                document.getElementById('ui-layer').style.display = 'block';
+                gameActive = true;
+                clock.start();
+                animate();
+                canvas.requestPointerLock();
+            }, 300);
+        });
+
+        window.openModal = function(id) {
+            document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+            document.getElementById(id).style.display = 'block';
+        };
+        window.closeModal = function(id) { document.getElementById(id).style.display = 'none'; };
+
+        window.toggleHouseLock = function() {
+            if(playerState.ownedHouseId !== null) {
+                playerState.houseLocked = !playerState.houseLocked;
+                const h = interactables.find(i => i.id === playerState.ownedHouseId);
+                if(h) {
+                    h.doorMat.color.setHex(playerState.houseLocked ? 0xff0000 : 0x00ff00);
+                    showSystemMessage(playerState.houseLocked ? "House Locked!" : "House Unlocked!");
+                }
+            } else {
+                showSystemMessage("You need to claim a house first!");
+            }
+        };
+
+        let msgTimeout;
+        function showSystemMessage(text) {
+            systemMessage.innerText = text; systemMessage.style.opacity = '1';
+            clearTimeout(msgTimeout); msgTimeout = setTimeout(() => { systemMessage.style.opacity = '0'; }, 3000);
+        }
+
+        function submitChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (text.length > 0) {
+                const hist = document.getElementById('chat-history');
+                const div = document.createElement('div');
+                div.innerHTML = `<b style="color:#77ff77">Guest_4021:</b> ${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}`;
+                hist.appendChild(div); hist.scrollTop = hist.scrollHeight; input.value = '';
+            }
+            input.blur(); canvas.requestPointerLock(); 
+        }
+
+    </script>
+</body>
+</html>

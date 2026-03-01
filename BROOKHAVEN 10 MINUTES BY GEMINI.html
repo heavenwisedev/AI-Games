@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Roblox Clone - Brookhaven Edition</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #6CB4EE;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); display: flex; justify-content: center;
+            align-items: center; flex-direction: column; color: white;
+            z-index: 20; pointer-events: auto; cursor: pointer;
+        }
+        #start-screen h1 { margin: 0; font-size: 50px; text-shadow: 3px 3px 6px #000; color: #FFD700; }
+        #start-screen p { font-size: 20px; color: #ddd; text-shadow: 1px 1px 2px #000; }
+
+        #top-bar {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7); padding: 10px 40px; border-radius: 20px;
+            color: white; font-size: 22px; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4); text-align: center; border: 2px solid rgba(255, 215, 0, 0.6);
+        }
+        #score-display { color: #FFD700; }
+        #time-display { display: block; font-size: 14px; color: #87CEFA; margin-top: 5px; font-weight: normal; }
+
+        #controls-hint {
+            position: absolute; top: 20px; right: 20px; background-color: rgba(0, 0, 0, 0.6);
+            color: white; padding: 15px; border-radius: 8px; font-size: 14px; text-align: right;
+            border: 1px solid #555;
+        }
+
+        #chat-container {
+            position: absolute; bottom: 20px; left: 20px; width: 350px;
+            background-color: rgba(0, 0, 0, 0.6); border-radius: 8px; padding: 10px;
+            pointer-events: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid #444;
+        }
+        #chat-history { height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+        .chat-message { color: #ffffff; font-size: 14px; text-shadow: 1px 1px 0 #000; }
+        .chat-message.system { color: #FFD700; }
+        .chat-message strong { color: #00ffcc; }
+        #chat-input {
+            width: 100%; box-sizing: border-box; padding: 10px; border: none; border-radius: 4px;
+            background-color: rgba(255, 255, 255, 0.9); font-size: 14px; outline: none; transition: 0.2s;
+        }
+        #chat-input:focus { background-color: #fff; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 3px; }
+        
+        #win-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; justify-content: center;
+            align-items: center; flex-direction: column; color: white;
+            font-size: 50px; font-weight: bold; opacity: 0; pointer-events: none;
+            transition: opacity 1s; z-index: 30;
+        }
+    </style>
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1>Town of Webhaven</h1>
+        <p>Click to Play</p>
+        <p style="font-size: 16px; margin-top: 20px;">[WASD] Move | [SPACE] Jump | [Mouse] Look | [/] Chat | [ESC] Pause</p>
+    </div>
+
+    <div id="ui-layer">
+        <div id="top-bar">
+            Objective: Find Coins <span id="score-display">0 / 15</span>
+            <span id="time-display">Time: Day</span>
+        </div>
+        
+        <div id="controls-hint">
+            <strong>Controls:</strong><br>
+            [W][A][S][D] - Move<br>
+            [SPACE] - Jump<br>
+            [Mouse] - Look Around<br>
+            [/] - Chat
+        </div>
+
+        <div id="chat-container">
+            <div id="chat-history">
+                <div class="chat-message system">System: Welcome to Webhaven! Explore the town and find 15 coins.</div>
+            </div>
+            <input type="text" id="chat-input" placeholder="Press '/' to chat..." autocomplete="off">
+        </div>
+
+        <div id="win-screen">
+            <div style="color: #FFD700; text-shadow: 0px 0px 20px #FF8C00;">TOWN MASTER!</div>
+            <div style="font-size: 24px; margin-top: 15px;">You found all the coins in Webhaven.</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 1. CORE SETUP & SCENE ---
+        const scene = new THREE.Scene();
+        const skyDay = new THREE.Color(0x6CB4EE);
+        const skyNight = new THREE.Color(0x020813);
+        scene.background = skyDay.clone();
+        scene.fog = new THREE.Fog(skyDay.clone(), 40, 250);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const colliders = [];
+        const coins = [];
+        let score = 0;
+        const totalCoins = 15;
+        let isGameWon = false;
+
+        // --- 2. LIGHTING (Dynamic Sun) ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff5b6, 1.2);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        // Keep shadow map high res, but we will move the light to follow the player
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 300;
+        const d = 100;
+        dirLight.shadow.camera.left = -d; dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.bias = -0.001;
+        scene.add(dirLight);
+
+        // --- 3. MATERIALS ---
+        const materials = {
+            grass: new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 1 }),
+            road: new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 }),
+            wood: new THREE.MeshStandardMaterial({ color: 0x6B4226 }),
+            leaves: new THREE.MeshStandardMaterial({ color: 0x228B22 }),
+            wallHouse1: new THREE.MeshStandardMaterial({ color: 0xFDF5E6 }),
+            wallHouse2: new THREE.MeshStandardMaterial({ color: 0xA9A9A9 }),
+            wallHouse3: new THREE.MeshStandardMaterial({ color: 0xADD8E6 }),
+            roof1: new THREE.MeshStandardMaterial({ color: 0x8B0000 }),
+            roof2: new THREE.MeshStandardMaterial({ color: 0x2F4F4F }),
+            hospitalWall: new THREE.MeshStandardMaterial({ color: 0xFFFFFF }),
+            hospitalCross: new THREE.MeshStandardMaterial({ color: 0xFF0000 }),
+            storeWall: new THREE.MeshStandardMaterial({ color: 0xFF8C00 }),
+            glass: new THREE.MeshStandardMaterial({ color: 0x87CEFA, transparent: true, opacity: 0.5, roughness: 0.1, metalness: 0.8 }),
+            coin: new THREE.MeshStandardMaterial({ color: 0xFFD700, emissive: 0x443300, metalness: 0.8, roughness: 0.2 }),
+            fountainWater: new THREE.MeshStandardMaterial({ color: 0x00BFFF, transparent: true, opacity: 0.8 })
+        };
+
+        // --- 4. ENVIRONMENT & CITY BUILDER ---
+        
+        // Huge Ground (600x600)
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), materials.grass);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Roads
+        function createRoad(width, length, x, z, rotY) {
+            const road = new THREE.Mesh(new THREE.PlaneGeometry(width, length), materials.road);
+            road.rotation.x = -Math.PI / 2;
+            road.rotation.z = rotY;
+            road.position.set(x, 0.1, z); // Slightly above ground to prevent z-fighting
+            road.receiveShadow = true;
+            scene.add(road);
+        }
+        
+        // Cross intersection
+        createRoad(30, 600, 0, 0, 0); // Main vertical Street
+        createRoad(30, 600, 0, 0, Math.PI / 2); // Main horizontal Street
+
+        // Builders
+        function createTree(x, z) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 7, 8), materials.wood);
+            trunk.position.y = 3.5; trunk.castShadow = true; trunk.receiveShadow = true;
+            tree.add(trunk);
+            const leaf1 = new THREE.Mesh(new THREE.ConeGeometry(5, 8, 8), materials.leaves);
+            leaf1.position.y = 8; leaf1.castShadow = true; tree.add(leaf1);
+            const leaf2 = new THREE.Mesh(new THREE.ConeGeometry(4, 7, 8), materials.leaves);
+            leaf2.position.y = 11; leaf2.castShadow = true; tree.add(leaf2);
+            tree.position.set(x, 0, z);
+            scene.add(tree);
+            colliders.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 3.5, z), new THREE.Vector3(2, 7, 2)));
+        }
+
+        function createHouse(x, z, rotation, type = 0) {
+            const house = new THREE.Group();
+            const w = 16, h = 10, d = 14;
+            let wallMat = materials.wallHouse1, roofMat = materials.roof1;
+            if (type === 1) { wallMat = materials.wallHouse2; roofMat = materials.roof2; }
+            if (type === 2) { wallMat = materials.wallHouse3; roofMat = materials.roof1; }
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            base.position.y = h / 2; base.castShadow = true; base.receiveShadow = true; house.add(base);
+
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(12.5, 7, 4), roofMat);
+            roof.position.y = h + 3.5; roof.rotation.y = Math.PI / 4; roof.castShadow = true; house.add(roof);
+
+            const door = new THREE.Mesh(new THREE.BoxGeometry(3.5, 6, 0.2), materials.wood);
+            door.position.set(0, 3, d / 2 + 0.1); house.add(door);
+
+            const winGeo = new THREE.BoxGeometry(3.5, 3.5, 0.2);
+            const win1 = new THREE.Mesh(winGeo, materials.glass); win1.position.set(-4.5, 5, d / 2 + 0.1); house.add(win1);
+            const win2 = new THREE.Mesh(winGeo, materials.glass); win2.position.set(4.5, 5, d / 2 + 0.1); house.add(win2);
+
+            house.position.set(x, 0, z); house.rotation.y = rotation;
+            scene.add(house);
+            house.updateMatrixWorld();
+            colliders.push(new THREE.Box3().setFromObject(base));
+        }
+
+        function createHospital(x, z, rotation) {
+            const hosp = new THREE.Group();
+            const base = new THREE.Mesh(new THREE.BoxGeometry(30, 40, 25), materials.hospitalWall);
+            base.position.y = 20; base.castShadow = true; base.receiveShadow = true; hosp.add(base);
+            
+            // Red Cross
+            const hGeo = new THREE.BoxGeometry(8, 2, 0.5);
+            const vGeo = new THREE.BoxGeometry(2, 8, 0.5);
+            const crossH = new THREE.Mesh(hGeo, materials.hospitalCross); crossH.position.set(0, 30, 12.6); hosp.add(crossH);
+            const crossV = new THREE.Mesh(vGeo, materials.hospitalCross); crossV.position.set(0, 30, 12.6); hosp.add(crossV);
+
+            // Large glass entrance
+            const glass = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 0.5), materials.glass);
+            glass.position.set(0, 4, 12.6); hosp.add(glass);
+
+            hosp.position.set(x, 0, z); hosp.rotation.y = rotation; scene.add(hosp);
+            hosp.updateMatrixWorld(); colliders.push(new THREE.Box3().setFromObject(base));
+        }
+
+        function createStore(x, z, rotation) {
+            const store = new THREE.Group();
+            const base = new THREE.Mesh(new THREE.BoxGeometry(35, 12, 20), materials.storeWall);
+            base.position.y = 6; base.castShadow = true; base.receiveShadow = true; store.add(base);
+            
+            const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(30, 8, 0.5), materials.glass);
+            frontGlass.position.set(0, 5, 10.1); store.add(frontGlass);
+
+            store.position.set(x, 0, z); store.rotation.y = rotation; scene.add(store);
+            store.updateMatrixWorld(); colliders.push(new THREE.Box3().setFromObject(base));
+        }
+
+        function createFountain(x, z) {
+            const fGroup = new THREE.Group();
+            const pool = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 2, 16), materials.wallHouse2);
+            pool.position.y = 1; pool.receiveShadow = true; fGroup.add(pool);
+            
+            const water = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, 2.1, 16), materials.fountainWater);
+            water.position.y = 1; fGroup.add(water);
+
+            const center = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2, 6, 8), materials.wallHouse2);
+            center.position.y = 3; center.castShadow = true; fGroup.add(center);
+
+            fGroup.position.set(x, 0, z); scene.add(fGroup);
+            colliders.push(new THREE.Box3().setFromObject(pool));
+        }
+
+        function createCoin(x, y, z) {
+            const coin = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.4, 16), materials.coin);
+            coin.position.set(x, y, z); coin.rotation.x = Math.PI / 2; coin.castShadow = true;
+            scene.add(coin); coins.push(coin);
+        }
+
+        // --- POPULATE WORLD ---
+        // Center Fountain
+        createFountain(0, 0);
+
+        // Commercial Buildings
+        createHospital(-45, -40, Math.PI/2);
+        createStore(45, -40, -Math.PI/2);
+
+        // Suburbs (Houses along the roads)
+        const houseData = [
+            [-35, -90, Math.PI/2, 0], [-35, -130, Math.PI/2, 1], [-35, -170, Math.PI/2, 2],
+            [35, -90, -Math.PI/2, 1], [35, -130, -Math.PI/2, 2], [35, -170, -Math.PI/2, 0],
+            [-35, 60, Math.PI/2, 2], [-35, 100, Math.PI/2, 0], [-35, 140, Math.PI/2, 1],
+            [35, 60, -Math.PI/2, 0], [35, 100, -Math.PI/2, 1], [35, 140, -Math.PI/2, 2],
+            [-90, -35, 0, 1], [-130, -35, 0, 2], [-170, -35, 0, 0],
+            [90, 35, Math.PI, 0], [130, 35, Math.PI, 1], [170, 35, Math.PI, 2]
+        ];
+        houseData.forEach(h => createHouse(h[0], h[1], h[2], h[3]));
+
+        // Trees everywhere
+        for(let i=0; i<40; i++) {
+            let tx = (Math.random() - 0.5) * 500;
+            let tz = (Math.random() - 0.5) * 500;
+            // Keep off roads
+            if (Math.abs(tx) > 20 && Math.abs(tz) > 20) createTree(tx, tz);
+        }
+
+        // Coins scattered (some on ground, some high up to encourage jumping)
+        const coinLocations = [
+            [0, 2, 25], [0, 8, 0], [-25, 2, -25], [25, 2, 25], [45, 14, -40], // One on store roof
+            [-35, 2, -70], [35, 2, 120], [-100, 2, -35], [150, 2, 35], [-45, 2, -20],
+            [10, 2, -150], [-10, 2, 180], [180, 2, -10], [-180, 2, 10], [0, 2, -200]
+        ];
+        coinLocations.forEach(c => createCoin(c[0], c[1], c[2]));
+
+        // Map Boundaries
+        const bound = 295;
+        colliders.push(new THREE.Box3(new THREE.Vector3(-bound, 0, -bound), new THREE.Vector3(-bound+5, 100, bound)));
+        colliders.push(new THREE.Box3(new THREE.Vector3(bound-5, 0, -bound), new THREE.Vector3(bound, 100, bound)));
+        colliders.push(new THREE.Box3(new THREE.Vector3(-bound, 0, -bound), new THREE.Vector3(bound, 100, -bound+5)));
+        colliders.push(new THREE.Box3(new THREE.Vector3(-bound, 0, bound-5), new THREE.Vector3(bound, 100, bound)));
+
+        // --- 5. PLAYER PHYSICS & CHARACTER ---
+        const playerGroup = new THREE.Group(); scene.add(playerGroup);
+        const playerColliderMesh = new THREE.Mesh(new THREE.BoxGeometry(3, 5.5, 3), new THREE.MeshBasicMaterial({visible: false}));
+        // Spawn player slightly off center so not inside fountain
+        playerColliderMesh.position.set(20, 10, 20); 
+        scene.add(playerColliderMesh);
+        const playerBox = new THREE.Box3();
+
+        // Physics variables
+        let velocityY = 0;
+        const gravity = -60;
+        const jumpForce = 35;
+        let isGrounded = false;
+
+        // Player Model Construction
+        const matHead = new THREE.MeshStandardMaterial({ color: 0xFCC200 });
+        const matTorso = new THREE.MeshStandardMaterial({ color: 0x0D69AB });
+        const matLimbs = new THREE.MeshStandardMaterial({ color: 0x4B9131 });
+
+        function createLimb(geo, mat, pivotY) {
+            const group = new THREE.Group();
+            const mesh = new THREE.Mesh(geo, mat); mesh.position.y = pivotY;
+            mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return group;
+        }
+
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(2, 2.2, 1), matTorso);
+        torso.position.y = 3.1; torso.castShadow = true; playerGroup.add(torso);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), matHead);
+        head.position.y = 4.8; head.castShadow = true; playerGroup.add(head);
+        
+        const limbGeo = new THREE.BoxGeometry(1, 2, 1);
+        const leftArm = createLimb(limbGeo, matHead, -1); leftArm.position.set(-1.5, 4.2, 0); playerGroup.add(leftArm);
+        const rightArm = createLimb(limbGeo, matHead, -1); rightArm.position.set(1.5, 4.2, 0); playerGroup.add(rightArm);
+        const leftLeg = createLimb(limbGeo, matLimbs, -1); leftLeg.position.set(-0.5, 2, 0); playerGroup.add(leftLeg);
+        const rightLeg = createLimb(limbGeo, matLimbs, -1); rightLeg.position.set(0.5, 2, 0); playerGroup.add(rightLeg);
+
+
+        // --- 6. INPUT & CONTROLS ---
+        const keys = { w: false, a: false, s: false, d: false, ' ': false };
+        let isPointerLocked = false;
+        let cameraYaw = 0, cameraPitch = 0.2;
+        const mouseSensitivity = 0.003;
+        
+        const startScreen = document.getElementById('start-screen');
+        const chatInput = document.getElementById('chat-input');
+        const chatHistory = document.getElementById('chat-history');
+
+        startScreen.addEventListener('click', () => { if (!isPointerLocked) document.body.requestPointerLock(); });
+
+        document.addEventListener('pointerlockchange', () => {
+            isPointerLocked = document.pointerLockElement === document.body;
+            startScreen.style.display = isPointerLocked ? 'none' : 'flex';
+            if (!isPointerLocked && !isGameWon) {
+                startScreen.innerHTML = "<h1>Paused</h1><p>Click to Resume | '/' to Chat</p>";
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isPointerLocked) {
+                cameraYaw -= e.movementX * mouseSensitivity;
+                cameraPitch -= e.movementY * mouseSensitivity;
+                cameraPitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 2.2, cameraPitch));
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (document.activeElement === chatInput) return;
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+
+            if (e.key === '/') {
+                e.preventDefault();
+                if (isPointerLocked) document.exitPointerLock();
+                chatInput.focus();
+                startScreen.style.display = 'none';
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = false;
+        });
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const text = chatInput.value.trim();
+                if (text.length > 0) {
+                    const msgDiv = document.createElement('div'); msgDiv.className = 'chat-message';
+                    msgDiv.innerHTML = `<strong>Player:</strong> ${text}`; chatHistory.appendChild(msgDiv);
+                    chatHistory.scrollTop = chatHistory.scrollHeight; chatInput.value = '';
+                }
+                chatInput.blur(); document.body.requestPointerLock();
+            }
+        });
+        chatInput.addEventListener('blur', () => {
+            if (!isPointerLocked && document.pointerLockElement !== document.body) startScreen.style.display = 'flex';
+        });
+
+        function checkCollision(testBox) {
+            for (let i = 0; i < colliders.length; i++) {
+                if (testBox.intersectsBox(colliders[i])) return true;
+            }
+            return false;
+        }
+
+
+        // --- 7. MAIN GAME LOOP ---
+        const clock = new THREE.Clock();
+        const moveSpeed = 22;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // Day / Night Cycle (60 seconds per full cycle)
+            const cyclePhase = (Math.sin(time * 0.1) + 1) / 2; // 0 (Night) to 1 (Day)
+            scene.background.copy(skyNight).lerp(skyDay, cyclePhase);
+            scene.fog.color.copy(scene.background);
+            dirLight.intensity = Math.max(0.05, cyclePhase * 1.5);
+            ambientLight.intensity = Math.max(0.2, cyclePhase * 0.6);
+            
+            // Update UI time string
+            const timeDisplay = document.getElementById('time-display');
+            if(cyclePhase > 0.7) timeDisplay.innerText = "Time: Day";
+            else if(cyclePhase > 0.3) timeDisplay.innerText = "Time: Dusk/Dawn";
+            else timeDisplay.innerText = "Time: Night";
+
+            if (!isGameWon) {
+                // Direction vectors relative to camera
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
+                const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
+
+                const moveDir = new THREE.Vector3(0, 0, 0);
+                if (keys.w) moveDir.add(forward);
+                if (keys.s) moveDir.sub(forward);
+                if (keys.a) moveDir.sub(right);
+                if (keys.d) moveDir.add(right);
+                if (moveDir.lengthSq() > 0) moveDir.normalize();
+
+                const isMoving = moveDir.lengthSq() > 0;
+
+                // Physics: Jumping & Gravity
+                velocityY += gravity * delta;
+                
+                // Jump input
+                if (keys[' '] && isGrounded && isPointerLocked) {
+                    velocityY = jumpForce;
+                    isGrounded = false;
+                }
+
+                // Apply Y velocity
+                playerColliderMesh.position.y += velocityY * delta;
+                
+                // Floor Collision
+                const floorHeight = 2.75; // Half of collider height
+                if (playerColliderMesh.position.y <= floorHeight) {
+                    playerColliderMesh.position.y = floorHeight;
+                    velocityY = 0;
+                    isGrounded = true;
+                } else {
+                    isGrounded = false; // In the air
+                }
+
+                // Apply X/Z Movement
+                if (isMoving && isPointerLocked) {
+                    const velX = moveDir.x * moveSpeed * delta;
+                    const velZ = moveDir.z * moveSpeed * delta;
+
+                    playerColliderMesh.position.x += velX; playerColliderMesh.updateMatrixWorld();
+                    playerBox.setFromObject(playerColliderMesh);
+                    if (checkCollision(playerBox)) playerColliderMesh.position.x -= velX;
+
+                    playerColliderMesh.position.z += velZ; playerColliderMesh.updateMatrixWorld();
+                    playerBox.setFromObject(playerColliderMesh);
+                    if (checkCollision(playerBox)) playerColliderMesh.position.z -= velZ;
+
+                    // Rotate Player model smoothly
+                    const targetAngle = Math.atan2(moveDir.x, moveDir.z);
+                    let currentAngle = playerGroup.rotation.y;
+                    let diff = targetAngle - currentAngle;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    playerGroup.rotation.y += diff * 12 * delta;
+                }
+
+                // Sync Visuals
+                playerGroup.position.copy(playerColliderMesh.position);
+                playerGroup.position.y -= floorHeight; // Shift model down so feet are on floor
+
+                // Animation Engine
+                if (!isGrounded) {
+                    // Jump/Falling pose (arms up, legs slightly split)
+                    leftArm.rotation.x = THREE.MathUtils.lerp(leftArm.rotation.x, Math.PI, 0.1);
+                    rightArm.rotation.x = THREE.MathUtils.lerp(rightArm.rotation.x, Math.PI, 0.1);
+                    leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, -0.2, 0.1);
+                    rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0.2, 0.1);
+                } else if (isMoving && isPointerLocked) {
+                    // Walking pose
+                    const walkSpeed = 16; const walkAmp = 0.9;
+                    const swing = Math.sin(time * walkSpeed) * walkAmp;
+                    leftArm.rotation.x = -swing; rightArm.rotation.x = swing;
+                    leftLeg.rotation.x = swing; rightLeg.rotation.x = -swing;
+                    playerGroup.position.y += Math.abs(Math.cos(time * walkSpeed)) * 0.25;
+                } else {
+                    // Idle pose
+                    leftArm.rotation.x = THREE.MathUtils.lerp(leftArm.rotation.x, 0, 0.1);
+                    rightArm.rotation.x = THREE.MathUtils.lerp(rightArm.rotation.x, 0, 0.1);
+                    leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, 0.1);
+                    rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, 0.1);
+                }
+
+                // Collectibles Logic
+                for (let i = coins.length - 1; i >= 0; i--) {
+                    const coin = coins[i];
+                    coin.rotation.y += 3 * delta; // spin faster
+                    // Floating effect
+                    coin.position.y += Math.sin(time * 3 + i) * 0.01; 
+
+                    if (playerGroup.position.distanceTo(coin.position) < 3.0) {
+                        scene.remove(coin); coins.splice(i, 1);
+                        score++;
+                        document.getElementById('score-display').innerText = `${score} / ${totalCoins}`;
+                        
+                        const msgDiv = document.createElement('div'); msgDiv.className = 'chat-message system';
+                        msgDiv.innerText = `System: You found a coin! (${score}/${totalCoins})`;
+                        chatHistory.appendChild(msgDiv); chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                        if (score >= totalCoins) {
+                            isGameWon = true;
+                            document.getElementById('win-screen').style.opacity = 1;
+                            document.exitPointerLock();
+                        }
+                    }
+                }
+            }
+
+            // Move Directional Light Target with player to keep shadows high-res
+            dirLight.position.x = playerGroup.position.x + 50;
+            dirLight.position.z = playerGroup.position.z + 50;
+            dirLight.target.position.copy(playerGroup.position);
+            dirLight.target.updateMatrixWorld();
+
+            // Camera Orbit Logic
+            const orbitRadius = 16; // Slightly further back for bigger jumps
+            const camX = playerGroup.position.x + orbitRadius * Math.sin(cameraYaw) * Math.cos(cameraPitch);
+            const camY = playerGroup.position.y + 4 + orbitRadius * Math.sin(cameraPitch);
+            const camZ = playerGroup.position.z + orbitRadius * Math.cos(cameraYaw) * Math.cos(cameraPitch);
+
+            camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.3); // faster lerp to keep up with jumps
+            camera.lookAt(playerGroup.position.x, playerGroup.position.y + 5, playerGroup.position.z);
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
